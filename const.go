@@ -1,7 +1,13 @@
 package resp
 
-import "v9.git.n.xiaomi.com/miot_shop/go_vendors/github.com/go-errors/errors"
+import "errors"
 
-const LINE_DELIMETER = "\r\n"
+const _lineDelimiter = "\r\n"
+
+const _typeSimplePrefix = '+'
+const _typeErrorPrefix = '-'
+const _typeIntegerPrefix = ':'
+const _typeBulkPrefix = '$'
+const _typeArrayPrefix = '*'
 
 var errIllegalProto = errors.New("illegal RESP protocol.")

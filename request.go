@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"strconv"
-	"strings"
 )
 
 type Request struct {
@@ -52,45 +50,27 @@ func ReadRequest(rd io.Reader) ([]byte, error) {
 func ParseRequest(rd io.Reader) (*Request, error) {
 	r := new(Request)
 	brd := bufio.NewReader(rd)
-	head, err := brd.ReadString('\n')
+	array, err := decodeArray(brd)
 	if err != nil {
 		return nil, err
 	}
-	if head[0] != '*' {
-		strs := strings.Split(strings.TrimSuffix(head, LINE_DELIMETER), "")
-		r.command = strs[0]
-		if len(strs) > 1 {
-			r.arguments = make([][]byte, 0, len(strs)-1)
-			for _, str := range strs {
-				r.arguments = append(r.arguments, []byte(str))
-			}
-		}
-		return r, nil
-	}
-	argCount, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(head, "*"), LINE_DELIMETER))
-	if err != nil {
+	if len(array) == 0 {
 		return nil, errIllegalProto
 	}
-	r.arguments = make([][]byte, 0, argCount)
-	for idx := 0; idx < argCount; idx++ {
-		line, err := brd.ReadString('\n')
-		if err != nil {
-			return nil, errIllegalProto
-		}
-		argLen, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(line, "$"), LINE_DELIMETER))
-		if err != nil {
-			return nil, errIllegalProto
-		}
-		body, err := brd.ReadBytes('\n')
-		body = bytes.TrimSuffix(body, []byte(LINE_DELIMETER))
-		if len(body) != argLen {
-			return nil, errIllegalProto
-		}
+	bulk, ok := array[0].(Bulk)
+	if !ok {
+		return nil, errIllegalProto
+	}
+	r.command = string(bulk)
+	for idx, a := range array {
 		if idx == 0 {
-			r.command = string(body)
 			continue
 		}
-		r.arguments = append(r.arguments, body)
+		bulk, ok := a.(Bulk)
+		if !ok {
+			return nil, errIllegalProto
+		}
+		r.arguments = append(r.arguments, bulk)
 	}
 	return r, nil
 }
@@ -105,20 +85,11 @@ func (r *Request) GetArguments() [][]byte {
 
 func (r *Request) Bytes() []byte {
 	var b bytes.Buffer
-	b.WriteRune('*')
-	b.WriteString(strconv.Itoa(len(r.arguments) + 1))
-	b.WriteString(LINE_DELIMETER)
-	b.WriteRune('$')
-	b.WriteString(strconv.Itoa(len(r.command)))
-	b.WriteString(LINE_DELIMETER)
-	b.WriteString(r.command)
-	b.WriteString(LINE_DELIMETER)
+	array := make(Array,0,len(r.arguments)+1)
+	array = append(array, Bulk(r.command))
 	for _, arg := range r.arguments {
-		b.WriteRune('$')
-		b.WriteString(strconv.Itoa(len(arg)))
-		b.WriteString(LINE_DELIMETER)
-		b.Write(arg)
-		b.WriteString(LINE_DELIMETER)
+		array = append(array, Bulk(arg))
 	}
+	encodeArray(&b, array)
 	return b.Bytes()
 }
