@@ -23,6 +23,8 @@ func main() {
 		return
 	}
 	defer conn.Close()
+	requestWriter := resp.NewRequestWriter(conn)
+	responseReader := resp.NewResponseReader(conn)
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Printf("%s:%d> ", *host, *port)
 	for scanner.Scan() {
@@ -38,12 +40,12 @@ func main() {
 			args = append(args, []byte(strs[idx]))
 		}
 		req := resp.NewRequest(string(strs[0]), args...)
-		_, err = conn.Write(req.Bytes())
+		err = requestWriter.Write(req)
 		if err != nil {
 			log.Printf("send command:%v", err)
 			return
 		}
-		ret, err := resp.ParseResponse(conn)
+		ret, err := responseReader.Next()
 		if err != nil {
 			log.Printf("read response: %v", err)
 			return
@@ -54,24 +56,28 @@ func main() {
 	}
 }
 
-func toString(v interface{}, depth int) string {
+func toString(v resp.Message, depth int) string {
 	var builder strings.Builder
 	for idx := 0; idx < depth; idx++ {
 		builder.WriteRune(' ')
 	}
 	switch val := v.(type) {
-	case resp.Integer:
+	case *resp.Integer:
 		builder.WriteString("(integer) ")
-		builder.WriteString(strconv.Itoa(int(val)))
-	case resp.SimpleString:
-		builder.WriteString(string(val))
-	case resp.Error:
+		builder.WriteString(strconv.Itoa(val.Value()))
+	case *resp.SimpleStrings:
+		builder.WriteString(val.Value())
+	case *resp.Error:
 		builder.WriteString("(error) ")
-		builder.WriteString(val.Error())
-	case resp.Bulk:
-		builder.WriteString(fmt.Sprintf("\"%s\"", string(val)))
-	case resp.Array:
-		for idx, item := range val {
+		builder.WriteString(val.Value().Error())
+	case *resp.BulkStrings:
+		if val.Value() == nil {
+			builder.WriteString("nil")
+			break
+		}
+		builder.WriteString(fmt.Sprintf("\"%s\"", *val.Value()))
+	case *resp.Array:
+		for idx, item := range val.Value() {
 			builder.WriteString(strconv.Itoa(idx) + ") ")
 			builder.WriteString(toString(item, depth+1))
 		}

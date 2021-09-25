@@ -18,59 +18,50 @@ func NewRequest(command string, arguments ...[]byte) *Request {
 	return r
 }
 
-func ReadRequest(rd io.Reader) ([]byte, error) {
-	brd := bufio.NewReader(rd)
-	head, err := brd.ReadBytes('\n')
-	if err != nil {
-		return nil, err
-	}
-	if head[0] != '*' {
-		return head, nil
-	}
-	var ret bytes.Buffer
-	argCount := 0
-	var char byte
-	for idx := 0; idx < len(head); idx++ {
-		char = head[idx]
-		if char < '0' || char > '9' {
-			return nil, errIllegalProto
-		}
-		argCount = argCount*10 + int(head[idx]-'0')
-	}
-	for idx := 0; idx < argCount*2; idx++ {
-		line, err := brd.ReadBytes('\n')
-		if err != nil {
-			return nil, err
-		}
-		ret.Write(line)
-	}
-	return ret.Bytes(), nil
+type RequestReader struct {
+	reader *bufio.Reader
 }
 
-func ParseRequest(rd io.Reader) (*Request, error) {
-	r := new(Request)
-	brd := bufio.NewReader(rd)
-	array, err := decodeArray(brd)
+func NewRequestReader(r io.Reader) *RequestReader {
+	rr := new(RequestReader)
+	rr.reader = bufio.NewReader(r)
+	return rr
+}
+
+func (rr RequestReader) Next() (*Request, error) {
+	msg, err := ReadMessage(rr.reader)
 	if err != nil {
 		return nil, err
 	}
-	if len(array) == 0 {
-		return nil, errIllegalProto
-	}
-	bulk, ok := array[0].(Bulk)
+	array, ok := msg.(*Array)
 	if !ok {
 		return nil, errIllegalProto
 	}
-	r.command = string(bulk)
-	for idx, a := range array {
+	if len(array.Value()) == 0 {
+		return nil, errIllegalRequest
+	}
+	value := array.Value()
+	bulk, ok := value[0].(*BulkStrings)
+	if !ok {
+		return nil, errIllegalRequest
+	}
+	if bulk.Value() == nil {
+		return nil, errIllegalRequest
+	}
+	r := new(Request)
+	r.command = *bulk.Value()
+	for idx, a := range value {
 		if idx == 0 {
 			continue
 		}
-		bulk, ok := a.(Bulk)
+		bulk, ok = a.(*BulkStrings)
 		if !ok {
-			return nil, errIllegalProto
+			return nil, errIllegalRequest
 		}
-		r.arguments = append(r.arguments, bulk)
+		if bulk.Value() == nil {
+			return nil, errIllegalRequest
+		}
+		r.arguments = append(r.arguments, []byte(*bulk.Value()))
 	}
 	return r, nil
 }
@@ -84,12 +75,35 @@ func (r *Request) GetArguments() [][]byte {
 }
 
 func (r *Request) Bytes() []byte {
-	var b bytes.Buffer
-	array := make(Array,0,len(r.arguments)+1)
-	array = append(array, Bulk(r.command))
+	buf := new(bytes.Buffer)
+	writer := bufio.NewWriter(buf)
+	msgs := make([]Message, 0, len(r.arguments)+1)
+	msgs = append(msgs, NewBulkStrings(&r.command))
 	for _, arg := range r.arguments {
-		array = append(array, Bulk(arg))
+		msgs = append(msgs, NewBulkStringsWithBytes(arg))
 	}
-	encodeArray(&b, array)
-	return b.Bytes()
+	a := NewArray(msgs)
+	WriteMessage(writer, a)
+	writer.Flush()
+	return buf.Bytes()
+}
+
+type RequestWriter struct {
+	writer *bufio.Writer
+}
+
+func NewRequestWriter(w io.Writer) *RequestWriter {
+	rw := new(RequestWriter)
+	rw.writer = bufio.NewWriter(w)
+	return rw
+}
+
+func (rw RequestWriter) Write(reqs ...*Request) error {
+	for _, req := range reqs {
+		_, err := rw.writer.Write(req.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+	return rw.writer.Flush()
 }

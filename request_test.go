@@ -27,7 +27,8 @@ func TestParseRequest(t *testing.T) {
 	args := [][]byte{[]byte("mykey"), []byte("myvalue")}
 	bs := "*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n"
 	for i := 0; i < 3; i++ {
-		r, e := ParseRequest(bytes.NewReader([]byte(bs)))
+		rr := NewRequestReader(bytes.NewReader([]byte(bs)))
+		r, e := rr.Next()
 		if e != nil {
 			t.Fail()
 			return

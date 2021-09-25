@@ -3,25 +3,28 @@ An implement of REdis Serialization Protocol.
 Designed using to implement redis-like server or client.
 
 ### Usage
-#### encoding
-1. request
+#### client side
+1. send request
 ```go
-req := NewRequest(command,arguments...)
-req.Bytes()
+requestWriter := resp.NewRequestWriter(conn)
+request := resp.NewRequest(command,arguments...)
+requestWriter.Write(request)
 ```
-2. response
+2. receive response
 ```go
-//todo
+responseReader := resp.NewResponseReader(conn)
+msg, err := responseReader.Next()
 ```
-#### decoding
-1. request
+#### server side
+1. receive request
 ```go
-req, err := ParseRequest(r)
+requestReader := resp.NewRequestReader(conn)
+request, err := requestReader.Next()
 ```
-2. response
+2. send response
 ```go
-resp, err := ParseResponse(r)
-//resp is one of resp.SimpleString, resp.Integer, resp.Error, resp.Bulk or resp.Array.
+responseWriter := resp.NewResponseWriter(conn)
+responseWriter.Write(msg)
 ```
 
 ### redis-cli
